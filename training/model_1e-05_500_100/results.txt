@@ -1,0 +1,2 @@
+323/1107 (29.2 percent) events correctly assigned by algo
+222/1107 (20.1 percent) events correctly assigned by selecting high-pt pair
