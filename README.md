@@ -7,6 +7,36 @@
 # writing code to create data
 # and train DNN in PyTorch
 
+## Environment settings
+Several non-standard libraries must be present in your python environment. To ensure they are present:
+
+*On lxplus* you will need to do this via a virtualenv (example @ http://scikit-hep.org/root_numpy/start.html):
+
+```
+curl -O https://bootstrap.pypa.io/get-pip.py
+python get-pip.py --user
+pip install --user virtualenv
+virtualenv <my_env>
+source <my_env>/bin/activate
+```
+Now you can run:
+```
+pip install <package>
+```
+
+Check whether or not the library dependancies are present on the lxplus machine and if not install them. Typically you will need to install:
+```
+numba
+awkward
+uproot
+vector
+itertools
+sklearn
+collections
+```
+
+There may be more that I've missed.
+
 
 # Tensors
 - Specialised data struct similar to arrays and matrices
