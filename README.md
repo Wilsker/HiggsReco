@@ -13,11 +13,7 @@ Several non-standard libraries must be present in your python environment. To en
 *On lxplus* you will need to do this via a virtualenv (example @ http://scikit-hep.org/root_numpy/start.html):
 
 ```
-curl -O https://bootstrap.pypa.io/get-pip.py
-python get-pip.py --user
-pip install --user virtualenv
-virtualenv <my_env>
-source <my_env>/bin/activate
+python3 -m venv virtualenv3
 ```
 Now you can run:
 ```
