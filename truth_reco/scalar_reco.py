@@ -28,6 +28,8 @@ class event_truth:
         self.mother_indices = []
         self.mother_ids = []
         self.mother_status = []
+        self.pscalar = vector.obj(pt=-1, eta=-1, phi=-1, mass=-1)
+        self.pscalar_idx = -1
         self.pscalar_lquark_idx = -1
         self.pscalar_lquark = vector.obj(pt=-1, eta=-1, phi=-1, mass=-1)
         self.pscalar_bquark_idx = -1
@@ -55,6 +57,12 @@ class event_truth:
     def set_pscalar_quarks(self):
         no_quarks_assigned = False
         for index_ in range(0,len(self.mother_indices)):
+            
+            if abs(self.particle_ids[index_]) == 5000001 and (self.particle_statusflags[index_]>>7)&1:
+                self.pscalar = self.particle_p4[index_]
+                self.pscalar_idx = index_
+                #print(f'H/A mass: {self.pscalar.mass}')
+
             # set events daughter particle info
             daughter_pt = self.particle_p4[index_].pt
             daughter_eta = self.particle_p4[index_].eta
@@ -111,7 +119,7 @@ class event_truth:
                             top_mother_idx = self.mother_indices[top_mother_idx]
                             top_mother_id = abs(self.particle_ids[top_mother_idx])
                         # If top originated from A/H, save top daughter as true decendent of A/H
-                        if top_mother_id == 5000001:
+                        if top_mother_id == 5000001: 
                             self.pscalar_lep = vector.obj(pt=daughter_pt, eta=daughter_eta, phi=daughter_phi, mass=daughter_mass)
                             self.pscalar_lep_idx = index_
 
@@ -211,17 +219,21 @@ def make_hist(array, name, nbins, min_bin, max_bin, x_units):
     plt.savefig(savename)
     plt.clf()
 
-def make_comparison_hist(array1, array2, name, nbins, min_bin, max_bin, x_units):
+#def make_comparison_hist(array1, array2, name, nbins, min_bin, max_bin, x_units):
+def make_comparison_hist(df_signal, df_bkg, dicname, nbins, x_units):
+    signal_ = df_signal[dicname]
+    bkg_ = df_bkg[dicname]
+    min_bin, max_bin = get_min_max_bins(signal_,bkg_)
+
     f, ax = plt.subplots()
-    plot_title = name.replace('_',' ')
-    ax.hist(array1,nbins,range=(min_bin,max_bin),edgecolor='black',color='red',alpha=0.5,label='correct(S)',density=True)
-    ax.hist(array2,nbins,range=(min_bin,max_bin),edgecolor='black',color='blue',alpha=0.5,label='incorrect(B)',density=True)
-    #ax.xaxis.set_major_locator(MultipleLocator(100))
+    plot_title = dicname.replace('_',' ')
+    ax.hist(signal_,nbins,range=(min_bin,max_bin),edgecolor='black',color='red',alpha=0.5,label='correct(S)',density=True)
+    ax.hist(bkg_,nbins,range=(min_bin,max_bin),edgecolor='black',color='blue',alpha=0.5,label='incorrect(B)',density=True)
     ax.set(ylabel='# entries')
     ax.set(xlabel=x_units)
     ax.legend()
     f.suptitle(plot_title)
-    plt.savefig('SvsB_'+name+'.png')
+    plt.savefig('SvsB_'+dicname+'.png')
     plt.clf()
 
 def get_min_max_bins(arr1_, arr2_):
@@ -276,6 +288,7 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
     'ttc_a_200-700GeV_with_geninfo.root'
     ]
 
+    n_events_fail_partreco_match = 0
     for files in filenames:
         # Input file full path
         input_full_path = os.path.join(input_path, files)
@@ -290,7 +303,7 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
         test_entries = num_events
 
         # Basic selection
-        selection_string = "(nElectron == 1) & (nMuon == 1) & (nJet > 3)"
+        selection_string = "(((n_tight_ele == 1) & (n_tight_muon == 1)) | (n_tight_muon == 2) | (n_tight_ele == 2)) & (n_tight_jet > 3)"
 
         # Create GenPart collections
         # Speed up code by removing any non-essential variables from here
@@ -330,7 +343,13 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
         RecoJet_phi = events.arrays(['Jet_phi'], selection_string, entry_stop=test_entries)['Jet_phi']
         RecoJet_mass = events.arrays(['Jet_mass'], selection_string, entry_stop=test_entries)['Jet_mass']
         RecoJet_p4 = vector.zip({'pt':RecoJet_pt, 'eta':RecoJet_eta, 'phi':RecoJet_phi, 'mass':RecoJet_mass})
+        RecoJet_CvB    = events.arrays(['Jet_btagDeepFlavCvB'], selection_string, entry_stop=test_entries)['Jet_btagDeepFlavCvB']
+        RecoJet_CvL    = events.arrays(['Jet_btagDeepFlavCvL'], selection_string, entry_stop=test_entries)['Jet_btagDeepFlavCvL']
+        RecoJet_FlavB  = events.arrays(['Jet_btagDeepFlavB'], selection_string, entry_stop=test_entries)['Jet_btagDeepFlavB']
         RecoJet_genjetidx = events.arrays(['Jet_genJetIdx'], selection_string, entry_stop=test_entries)['Jet_genJetIdx']
+
+        TightJet_id    = events.arrays(['tightJets_id_in24'], selection_string, entry_stop=test_entries)['tightJets_id_in24']
+        nTightJet      = events.arrays(['n_tight_jet'], selection_string, entry_stop=test_entries)['n_tight_jet']
 
         # Create reco electron 4-vectors
         nElectrons = events.arrays(['nElectron'], selection_string, entry_stop=test_entries)['nElectron']
@@ -340,6 +359,10 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
         RecoElectron_mass = events.arrays(['Electron_mass'], selection_string, entry_stop=test_entries)['Electron_mass']
         RecoElectron_p4 = vector.zip({'pt':RecoElectron_pt, 'eta':RecoElectron_eta, 'phi':RecoElectron_phi, 'mass':RecoElectron_mass})
 
+        TightEl_id    = events.arrays(['tightElectrons_id'], selection_string, entry_stop=test_entries)['tightElectrons_id']
+        nTightEl      = events.arrays(['n_tight_ele'], selection_string, entry_stop=test_entries)['n_tight_ele']
+        
+
         # Create reco muon 4-vectors
         nMuons = events.arrays(['nMuon'], selection_string, entry_stop=test_entries)['nMuon']
         RecoMuon_pt = events.arrays(['Muon_pt'], selection_string, entry_stop=test_entries)['Muon_pt']
@@ -347,6 +370,9 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
         RecoMuon_phi = events.arrays(['Muon_phi'], selection_string, entry_stop=test_entries)['Muon_phi']
         RecoMuon_mass = events.arrays(['Muon_mass'], selection_string, entry_stop=test_entries)['Muon_mass']
         RecoMuon_p4 = vector.zip({'pt':RecoMuon_pt, 'eta':RecoMuon_eta, 'phi':RecoMuon_phi, 'mass':RecoMuon_mass})
+        
+        TightMu_id    = events.arrays(['tightMuons_id'], selection_string, entry_stop=test_entries)['tightMuons_id']
+        nTightMu      = events.arrays(['n_tight_muon'], selection_string, entry_stop=test_entries)['n_tight_muon']
 
         # Code producing some statistics/plots on the jet multiplicities
         #make_hist(nRecoJets, 'nRecoJets', 20, 0, 20, '# reco jets')
@@ -358,6 +384,7 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
 
         # Dataframe to be used in training
         training_df = []
+        candidate_true_mass = []
         candidate_genjet_inv_mass = []
         candidate_reco_inv_mass = []
         candidate_reco_jet_indices = []
@@ -371,6 +398,7 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
         cand_jets_lead9=0
 
         # Make the candidate at reco level using gen-reco matching
+        # n.b. len(RecoJet_genjetidx) provides # entries after selection string has been implemented        
         for row in range(0,len(RecoJet_genjetidx)):
             # Set truth info for event
             ev_truth = event_truth()
@@ -395,11 +423,21 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
             #if ev_truth.pscalar_lquark.pt == -1 or ev_truth.pscalar_bquark.pt == -1 or ev_truth.pscalar_lep.pt == -1:
             #    continue
 
+            # Implement requirement if you only want a single mass point (maybe for demonstrative plots)
+            #if abs(ev_truth.pscalar.mass - 500) > 20:
+            #    continue
+            #print('ev_truth.pscalar.mass: ', ev_truth.pscalar.mass)
+
+            candidate_true_mass.append(ev_truth.pscalar.mass)
+
             # The following function must come after the parton level information is checked
             ev_truth.dr_parton_particle()
 
             recoJet_p4_dict = {}
             for j_idx in range(0,len(RecoJet_p4[row])):
+                if not (j_idx in TightJet_id[row]):
+                    continue
+
                 # Create reco jet dict
                 recoJet_p4_dict['RecoJet{0}'.format(j_idx)] = RecoJet_p4[row,j_idx]
 
@@ -431,10 +469,16 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
             reco_leptons_p4_list = []
 
             # collect all reco-level leptons
-            for el in RecoElectron_p4[row]:
-                reco_leptons_p4_list.append(el)
-            for mu in RecoMuon_p4[row]:
-                reco_leptons_p4_list.append(mu)
+            for el_idx in range(0,len(RecoElectron_p4[row])):
+                if not (el_idx in TightEl_id[row]):
+                    continue
+                else:
+                    reco_leptons_p4_list.append(RecoElectron_p4[row][el_idx])
+            for mu_idx in range(0,len(RecoMuon_p4[row])):
+                if not (mu_idx in TightMu_id[row]):
+                    continue
+                else:
+                    reco_leptons_p4_list.append(RecoMuon_p4[row][mu_idx])
 
             # Get 4-vector of reco lepton dR matched to GenLep
             scalar_recolep_p4 = min(reco_leptons_p4_list, key=lambda x: ev_truth.pscalar_genlep.deltaR(x))
@@ -455,9 +499,10 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
             recoj1_index.append(recoj1_idx)
             recoj2_index.append(recoj2_idx)
 
+            tight_jet_id_skim = TightJet_id[row][:min(nTightJet[row],6)]
             # Now we start creating output dataset
             # Create dict of various combinations of all n reco jets in event = n(n+1)/2
-            combinations_list = list(combinations(recoJet_p4_dict.items(), 2 ))
+            combinations_list = list(combinations(tight_jet_id_skim, 2 ))
 
             # Sort list of reco leptons according to pt for input into dataframe
             reco_leptons_p4_list.sort(key=lambda x: x.pt, reverse=True)
@@ -468,24 +513,44 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
             bmatched_jet_eta = []
             bmatched_jet_phi = []
             bmatched_jet_mass = []
+            bmatched_jet_CvB = []
+            bmatched_jet_CvL = []
+            bmatched_jet_FlavB = []
             lmatched_jet_pt = []
             lmatched_jet_eta = []
             lmatched_jet_phi = []
             lmatched_jet_mass = []
+            lmatched_jet_CvB = []
+            lmatched_jet_CvL = []
+            lmatched_jet_FlavB = []
             dR_bmatched_lmatched_jets = []
+            dR_bmatched_jet3 = []
+            dR_bmatched_jet4 = []
+            dR_lmatched_jet3 = []
+            dR_lmatched_jet4 = []
             dR_bmatched_jet_lep1 = []
             dR_bmatched_jet_lep2 = []
             dR_lmatched_jet_lep1 = []
             dR_lmatched_jet_lep2 = []
+            dR_jet3_lep1 = []
+            dR_jet3_lep2 = []
+            dR_jet4_lep1 = []
+            dR_jet4_lep2 = []
             invmass_bjlj = []
             jet3_pt = []
             jet3_eta = []
             jet3_phi = []
             jet3_mass = []
+            jet3_CvL = []
+            jet3_CvB = []
+            jet3_FlavB = []
             jet4_pt = []
             jet4_eta = []
             jet4_phi = []
             jet4_mass = []
+            jet4_CvL = []
+            jet4_CvB = []
+            jet4_FlavB = []
             leading_lept_pt = []
             leading_lept_eta = []
             leading_lept_phi = []
@@ -495,15 +560,16 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
             subleading_lept_phi = []
             subleading_lept_mass = []
             labels = []
+            Entry = []
 
             for comb_ in combinations_list:
                 # Combinations of form comb_[which jet][key @dimension='0' or 4-vector @dimension='1']
                 n_candidates = 0
                 # Check if the index of the jets @ positions 0 or 1 are the same as either candidate reco index
-                # [7:] strips 'RecoJet' from key
-                if int(comb_[0][0][7:]) in [recoj1_idx,recoj2_idx]:
+                #if int(comb_[0][0][7:]) in [recoj1_idx,recoj2_idx]:
+                if comb_[0] in [recoj1_idx,recoj2_idx]:
                     n_candidates+=1
-                if int(comb_[1][0][7:]) in [recoj1_idx,recoj2_idx]:
+                if comb_[1] in [recoj1_idx,recoj2_idx]:
                     n_candidates+=1
                 # Signal = any combination where jets in position 1 and 2 had the same index as the candidate reco jets
                 if n_candidates == 2:
@@ -511,17 +577,23 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
                 else:
                     label = 0
 
-                bmatched_jet_pt.append(comb_[0][1].pt)
-                bmatched_jet_eta.append(comb_[0][1].eta)
-                bmatched_jet_phi.append(comb_[0][1].phi)
-                bmatched_jet_mass.append(comb_[0][1].mass)
+                bmatched_jet_pt.append(RecoJet_pt[row][comb_[0]])
+                bmatched_jet_eta.append(RecoJet_eta[row][comb_[0]])
+                bmatched_jet_phi.append(RecoJet_phi[row][comb_[0]])
+                bmatched_jet_mass.append(RecoJet_mass[row][comb_[0]])
+                bmatched_jet_CvB.append(RecoJet_CvB[row][comb_[0]])
+                bmatched_jet_CvL.append(RecoJet_CvL[row][comb_[0]])
+                bmatched_jet_FlavB.append(RecoJet_FlavB[row][comb_[0]])
 
-                lmatched_jet_pt.append(comb_[1][1].pt)
-                lmatched_jet_eta.append(comb_[1][1].eta)
-                lmatched_jet_phi.append(comb_[1][1].phi)
-                lmatched_jet_mass.append(comb_[1][1].mass)
+                lmatched_jet_pt.append(RecoJet_pt[row][comb_[1]])
+                lmatched_jet_eta.append(RecoJet_eta[row][comb_[1]])
+                lmatched_jet_phi.append(RecoJet_phi[row][comb_[1]])
+                lmatched_jet_mass.append(RecoJet_mass[row][comb_[1]])
+                lmatched_jet_CvB.append(RecoJet_CvB[row][comb_[1]])
+                lmatched_jet_CvL.append(RecoJet_CvL[row][comb_[1]])
+                lmatched_jet_FlavB.append(RecoJet_FlavB[row][comb_[1]])
 
-                dR_bmatched_lmatched_jets.append( comb_[0][1].deltaR(comb_[1][1]) )
+                dR_bmatched_lmatched_jets.append( RecoJet_p4[row][comb_[0]].deltaR(RecoJet_p4[row][comb_[1]]) )
 
                 leading_lept_pt.append(reco_leptons_p4_list[0].pt)
                 leading_lept_eta.append(reco_leptons_p4_list[0].eta)
@@ -533,31 +605,57 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
                 subleading_lept_phi.append(reco_leptons_p4_list[1].phi)
                 subleading_lept_mass.append(reco_leptons_p4_list[1].mass)
 
-                dR_bmatched_jet_lep1.append( comb_[0][1].deltaR(reco_leptons_p4_list[0]) )
-                dR_bmatched_jet_lep2.append( comb_[0][1].deltaR(reco_leptons_p4_list[1]) )
-                dR_lmatched_jet_lep1.append( comb_[1][1].deltaR(reco_leptons_p4_list[0]) )
-                dR_lmatched_jet_lep2.append( comb_[1][1].deltaR(reco_leptons_p4_list[1]) )
+                dR_bmatched_jet_lep1.append( RecoJet_p4[row][comb_[0]].deltaR(reco_leptons_p4_list[0]) )
+                dR_bmatched_jet_lep2.append( RecoJet_p4[row][comb_[0]].deltaR(reco_leptons_p4_list[1]) )
+                dR_lmatched_jet_lep1.append( RecoJet_p4[row][comb_[1]].deltaR(reco_leptons_p4_list[0]) )
+                dR_lmatched_jet_lep2.append( RecoJet_p4[row][comb_[1]].deltaR(reco_leptons_p4_list[1]) )
 
-                tempj0_ = vector.obj(pt=comb_[0][1].pt, eta=comb_[0][1].eta, phi=comb_[0][1].phi, mass=comb_[0][1].mass)
-                tempj1_ = vector.obj(pt=comb_[1][1].pt, eta=comb_[1][1].eta, phi=comb_[1][1].phi, mass=comb_[1][1].mass)
+                tempj0_ = vector.obj(pt=RecoJet_p4[row][comb_[0]].pt, eta=RecoJet_p4[row][comb_[0]].eta, phi=RecoJet_p4[row][comb_[0]].phi, mass=RecoJet_p4[row][comb_[0]].mass)
+                tempj1_ = vector.obj(pt=RecoJet_p4[row][comb_[1]].pt, eta=RecoJet_p4[row][comb_[1]].eta, phi=RecoJet_p4[row][comb_[1]].phi, mass=RecoJet_p4[row][comb_[1]].mass)
                 j1j2_combined_mass = compute_di_mass(tempj0_,tempj1_)
                 invmass_bjlj.append( j1j2_combined_mass )
 
-                jet3_index = -1
-                for key, val in recoJet_p4_dict.items():
-                    if int(key[-1]) not in [int(comb_[0][0][-1]),int(comb_[1][0][-1])] and jet3_index == -1:
-                        jet3_index = int(key[-1])
-                        jet3_pt.append(val.pt)
-                        jet3_eta.append(val.eta)
-                        jet3_phi.append(val.phi)
-                        jet3_mass.append(val.mass)
-                    elif int(key[-1]) not in [int(comb_[0][0][-1]),int(comb_[1][0][-1]),jet3_index]:
-                        jet4_index = int(key[-1])
-                        jet4_pt.append(val.pt)
-                        jet4_eta.append(val.eta)
-                        jet4_phi.append(val.phi)
-                        jet4_mass.append(val.mass)
+                jet3_index_ = -1
+                jet4_index_ = -1
+                
+                for idx in tight_jet_id_skim:
+                    if idx not in [comb_[0], comb_[1]] and jet3_index_ == -1:
+                        jet3_index_ = idx
+                        jet3_pt.append(RecoJet_p4[row][idx].pt)
+                        jet3_eta.append(RecoJet_p4[row][idx].eta)
+                        jet3_phi.append(RecoJet_p4[row][idx].phi)
+                        jet3_mass.append(RecoJet_p4[row][idx].mass)
+                        jet3_CvB.append(RecoJet_CvB[row][idx])
+                        jet3_CvL.append(RecoJet_CvL[row][idx])
+                        jet3_FlavB.append(RecoJet_FlavB[row][idx])
+                        tempj3_ = vector.obj(pt=RecoJet_p4[row][idx].pt, eta=RecoJet_p4[row][idx].eta, phi=RecoJet_p4[row][idx].phi, mass=RecoJet_p4[row][idx].mass)
+                        dR_bmatched_jet3.append( RecoJet_p4[row][comb_[0]].deltaR(tempj3_) )
+                        dR_lmatched_jet3.append( RecoJet_p4[row][comb_[1]].deltaR(tempj3_) )
+                        dR_jet3_lep1.append( tempj3_.deltaR(reco_leptons_p4_list[0]) )
+                        dR_jet3_lep2.append( tempj3_.deltaR(reco_leptons_p4_list[1]) )
+                    elif idx not in [comb_[0], comb_[1], jet3_index_]:
+                        jet4_index_ = idx
+                        jet4_pt.append(RecoJet_p4[row][idx].pt)
+                        jet4_eta.append(RecoJet_p4[row][idx].eta)
+                        jet4_phi.append(RecoJet_p4[row][idx].phi)
+                        jet4_mass.append(RecoJet_p4[row][idx].mass)
+                        jet4_CvB.append(RecoJet_CvB[row][idx])
+                        jet4_CvL.append(RecoJet_CvL[row][idx])
+                        jet4_FlavB.append(RecoJet_FlavB[row][idx])
+                        tempj4_ = vector.obj(pt=RecoJet_p4[row][idx].pt, eta=RecoJet_p4[row][idx].eta, phi=RecoJet_p4[row][idx].phi, mass=RecoJet_p4[row][idx].mass)
+                        dR_bmatched_jet4.append( RecoJet_p4[row][comb_[0]].deltaR(tempj4_) )
+                        dR_lmatched_jet4.append( RecoJet_p4[row][comb_[1]].deltaR(tempj4_) )
+                        dR_jet4_lep1.append( tempj4_.deltaR(reco_leptons_p4_list[0]) )
+                        dR_jet4_lep2.append( tempj4_.deltaR(reco_leptons_p4_list[1]) )
                         break
+                '''if jet4_index_ == -1:
+                    jet4_pt.append(-9.0)
+                    jet4_eta.append(-9.0)
+                    jet4_phi.append(-9.0)
+                    jet4_mass.append(-9.0)
+                    jet4_CvB.append(-1.0)
+                    jet4_CvL.append(-1.0)
+                    jet4_FlavB.append(-1.0)'''                
 
                 labels.append(label)
 
@@ -568,15 +666,29 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
             'bmatched_jet_eta': bmatched_jet_eta,
             'bmatched_jet_phi': bmatched_jet_phi,
             'bmatched_jet_mass': bmatched_jet_mass,
+            'bmatched_jet_CvB': bmatched_jet_CvB,
+            'bmatched_jet_CvL': bmatched_jet_CvL,
+            'bmatched_jet_FlavB': bmatched_jet_FlavB,
             'lmatched_jet_pt': lmatched_jet_pt,
             'lmatched_jet_eta': lmatched_jet_eta,
             'lmatched_jet_phi': lmatched_jet_phi,
             'lmatched_jet_mass': lmatched_jet_mass,
+            'lmatched_jet_CvB': lmatched_jet_CvB,
+            'lmatched_jet_CvL': lmatched_jet_CvL,
+            'lmatched_jet_FlavB': lmatched_jet_FlavB,
             'dR_bmatched_lmatched_jets': dR_bmatched_lmatched_jets,
+            'dR_bmatched_jet3': dR_bmatched_jet3,
+            'dR_bmatched_jet4': dR_bmatched_jet4,
+            'dR_lmatched_jet3': dR_lmatched_jet3,
+            'dR_lmatched_jet4': dR_lmatched_jet4,
             'dR_bmatched_jet_lep1': dR_bmatched_jet_lep1,
             'dR_bmatched_jet_lep2': dR_bmatched_jet_lep2,
             'dR_lmatched_jet_lep1': dR_lmatched_jet_lep1,
             'dR_lmatched_jet_lep2': dR_lmatched_jet_lep2,
+            'dR_jet3_lep1': dR_jet3_lep1,
+            'dR_jet3_lep2': dR_jet3_lep2,
+            'dR_jet4_lep1': dR_jet4_lep1,
+            'dR_jet4_lep2': dR_jet4_lep2,
             'invmass_bjlj': invmass_bjlj,
             'lep1_pt': leading_lept_pt,
             'lep1_eta': leading_lept_eta,
@@ -590,10 +702,16 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
             'jet3_eta': jet3_eta,
             'jet3_phi': jet3_phi,
             'jet3_mass': jet3_mass,
+            'jet3_CvB': jet3_CvB,
+            'jet3_CvL': jet3_CvL,
+            'jet3_FlavB': jet3_FlavB,
             'jet4_pt': jet4_pt,
             'jet4_eta': jet4_eta,
             'jet4_phi': jet4_phi,
             'jet4_mass': jet4_mass,
+            'jet4_CvB': jet4_CvB,
+            'jet4_CvL': jet4_CvL,
+            'jet4_FlavB': jet4_FlavB,
             'label': labels
             }
             df_ = pd.DataFrame(data=d_entries)
@@ -601,6 +719,7 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
 
         make_hist(candidate_reco_inv_mass, 'candidate_reco_jjl_inv_mass', 50, 100, 1100, 'Minv[GeV]')
         make_hist(candidate_genjet_inv_mass, 'candidate_genjet_jjl_inv_mass', 50, 100, 1100, 'Minv[GeV]')
+        make_hist(candidate_true_mass, 'candidate_true_mass', 50, 100, 1100, 'Minv[GeV]')
         make_hist(recoj1_index, 'Reco-jet (A/H b genjet matched)', 10, 0, 10, 'Index (pt ordered)')
         make_hist(recoj2_index, 'Reco-jet (A/H light genjet matched)', 10, 0, 10, 'Index (pt ordered)')
         cand_reco_jets_firstNj = [cand_jets_lead2,cand_jets_lead3,cand_jets_lead5,cand_jets_lead7,cand_jets_lead9]
@@ -609,9 +728,7 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
 
         # Concatenate event entries into one list (this may not be necessary and is 'undone' in training code)
         result = pd.concat(training_df)
-
-        #preprocess_data = False
-
+        preprocess_data = 0
         if preprocess_data == 1:
             # Preprocessing data
             colnames = list(d_entries.keys())
@@ -627,71 +744,55 @@ def load_data(input_path, outdir, output_format, num_events, preprocess_data):
             transformed_df = pd.DataFrame(result_,columns=colnames)
             result = transformed_df
 
-
         # Seperate correct and incorrect labels
         df_signal = result.loc[result['label'] == 1]
         df_bkg = result.loc[result['label'] == 0]
 
-        signal_bmatched_jet_pt = df_signal['bmatched_jet_pt']
-        bkg_bmatched_jet_pt = df_bkg['bmatched_jet_pt']
-        min_b, max_b = get_min_max_bins(signal_bmatched_jet_pt,bkg_bmatched_jet_pt)
-        make_comparison_hist(signal_bmatched_jet_pt,bkg_bmatched_jet_pt,'bmatched_jet_pt',20,min_b,max_b,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'lep1_pt',20,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'lep1_eta',20,'$\eta$')
+        make_comparison_hist(df_signal,df_bkg,'lep1_phi',20,'$\phi$')
 
-        signal_lmatched_jet_pt = df_signal['lmatched_jet_pt']
-        bkg_lmatched_jet_pt = df_bkg['lmatched_jet_pt']
-        min_b, max_b = get_min_max_bins(signal_lmatched_jet_pt,bkg_lmatched_jet_pt)
-        make_comparison_hist(signal_lmatched_jet_pt,bkg_lmatched_jet_pt,'lmatched_jet_pt',20,min_b,max_b,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'lep2_pt',20,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'lep2_eta',20,'$\eta$')
+        make_comparison_hist(df_signal,df_bkg,'lep2_phi',20,'$\phi$')
 
-        signal_dR_bmatched_lmatched_jets = df_signal['dR_bmatched_lmatched_jets']
-        bkg_dR_bmatched_lmatched_jets = df_bkg['dR_bmatched_lmatched_jets']
-        min_b, max_b = get_min_max_bins(signal_dR_bmatched_lmatched_jets,bkg_dR_bmatched_lmatched_jets)
-        make_comparison_hist(signal_dR_bmatched_lmatched_jets,bkg_dR_bmatched_lmatched_jets,'dR_bmatched_lmatched_jets',20,min_b,max_b,'dR')
+        make_comparison_hist(df_signal,df_bkg,'bmatched_jet_pt',20,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'bmatched_jet_eta',20,'$\eta$')
+        make_comparison_hist(df_signal,df_bkg,'bmatched_jet_phi',20,'$\phi$')
+        make_comparison_hist(df_signal,df_bkg,'bmatched_jet_CvB',20,'CvB')
+        make_comparison_hist(df_signal,df_bkg,'bmatched_jet_CvL',20,'CvL')
+        make_comparison_hist(df_signal,df_bkg,'bmatched_jet_FlavB',20,'FlavB')
 
-        signal_jet3_pt = df_signal['jet3_pt']
-        bkg_jet3_pt = df_bkg['jet3_pt']
-        min_b, max_b = get_min_max_bins(signal_jet3_pt,bkg_jet3_pt)
-        make_comparison_hist(signal_jet3_pt,bkg_jet3_pt,'jet3_pt',50,min_b,max_b,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'lmatched_jet_pt',20,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'lmatched_jet_eta',20,'$\eta$')
+        make_comparison_hist(df_signal,df_bkg,'lmatched_jet_phi',20,'$\phi$')
+        make_comparison_hist(df_signal,df_bkg,'lmatched_jet_CvB',20,'CvB')
+        make_comparison_hist(df_signal,df_bkg,'lmatched_jet_CvL',20,'CvL')
+        make_comparison_hist(df_signal,df_bkg,'lmatched_jet_FlavB',20,'FlavB')
 
-        signal_jet4_pt = df_signal['jet4_pt']
-        bkg_jet4_pt = df_bkg['jet4_pt']
-        min_b, max_b = get_min_max_bins(signal_jet4_pt,bkg_jet4_pt)
-        make_comparison_hist(signal_jet4_pt,bkg_jet4_pt,'jet4_pt',50,min_b,max_b,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'jet3_pt',20,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'jet3_eta',20,'$\eta$')
+        make_comparison_hist(df_signal,df_bkg,'jet3_phi',20,'$\phi$')
 
-        signal_bmatched_jet_eta = df_signal['bmatched_jet_eta']
-        bkg_bmatched_jet_eta = df_bkg['bmatched_jet_eta']
-        min_b, max_b = get_min_max_bins(signal_bmatched_jet_eta,bkg_bmatched_jet_eta)
-        make_comparison_hist(signal_bmatched_jet_eta,bkg_bmatched_jet_eta,'bmatched_jet_eta',20,min_b,max_b,f'$\eta$')
+        make_comparison_hist(df_signal,df_bkg,'jet4_pt',20,'$p_T[GeV]$')
+        make_comparison_hist(df_signal,df_bkg,'jet4_eta',20,'$\eta$')
+        make_comparison_hist(df_signal,df_bkg,'jet4_phi',20,'$\phi$')
 
-        signal_lmatched_jet_eta = df_signal['lmatched_jet_eta']
-        bkg_lmatched_jet_eta = df_bkg['lmatched_jet_eta']
-        min_b, max_b = get_min_max_bins(signal_lmatched_jet_eta,bkg_lmatched_jet_eta)
-        make_comparison_hist(signal_lmatched_jet_eta,bkg_lmatched_jet_eta,'lmatched_jet_eta',20,min_b,max_b,'$\eta$')
+        make_comparison_hist(df_signal,df_bkg,'dR_bmatched_lmatched_jets',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_bmatched_jet3',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_bmatched_jet4',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_lmatched_jet3',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_lmatched_jet4',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_bmatched_jet_lep1',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_bmatched_jet_lep2',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_lmatched_jet_lep1',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_lmatched_jet_lep2',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_jet3_lep1',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_jet3_lep2',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_jet4_lep1',20,'$\Delta$R')
+        make_comparison_hist(df_signal,df_bkg,'dR_jet4_lep2',20,'$\Delta$R')
 
-        signal_dR_bmatched_jet_lep1 = df_signal['dR_bmatched_jet_lep1']
-        bkg_dR_bmatched_jet_lep1 = df_bkg['dR_bmatched_jet_lep1']
-        min_b, max_b = get_min_max_bins(signal_dR_bmatched_jet_lep1,bkg_dR_bmatched_jet_lep1)
-        make_comparison_hist(signal_dR_bmatched_jet_lep1,bkg_dR_bmatched_jet_lep1,'dR_bmatched_jet_lep1',20,min_b,max_b,'dR')
-
-        signal_dR_bmatched_jet_lep2 = df_signal['dR_bmatched_jet_lep2']
-        bkg_dR_bmatched_jet_lep2 = df_bkg['dR_bmatched_jet_lep2']
-        min_b, max_b = get_min_max_bins(signal_dR_bmatched_jet_lep2,bkg_dR_bmatched_jet_lep2)
-        make_comparison_hist(signal_dR_bmatched_jet_lep2,bkg_dR_bmatched_jet_lep2,'dR_bmatched_jet_lep2',20,min_b,max_b,'dR')
-
-        signal_dR_lmatched_jet_lep1 = df_signal['dR_lmatched_jet_lep1']
-        bkg_dR_lmatched_jet_lep1 = df_bkg['dR_lmatched_jet_lep1']
-        min_b, max_b = get_min_max_bins(signal_dR_lmatched_jet_lep1,bkg_dR_lmatched_jet_lep1)
-        make_comparison_hist(signal_dR_lmatched_jet_lep1,bkg_dR_lmatched_jet_lep1,'dR_lmatched_jet_lep1',20,min_b,max_b,'dR')
-
-        signal_dR_lmatched_jet_lep2 = df_signal['dR_lmatched_jet_lep2']
-        bkg_dR_lmatched_jet_lep2 = df_bkg['dR_lmatched_jet_lep2']
-        min_b, max_b = get_min_max_bins(signal_dR_lmatched_jet_lep2,bkg_dR_lmatched_jet_lep2)
-        make_comparison_hist(signal_dR_lmatched_jet_lep2,bkg_dR_lmatched_jet_lep2,'dR_lmatched_jet_lep2',20,min_b,max_b,'dR')
-
-        signal_invmass_bjlj = df_signal['invmass_bjlj']
-        bkg_invmass_bjlj = df_bkg['invmass_bjlj']
-        min_b, max_b = get_min_max_bins(signal_invmass_bjlj,bkg_invmass_bjlj)
-        make_comparison_hist(signal_invmass_bjlj,bkg_invmass_bjlj,'invmass_bjlj',50,min_b,max_b,'Mass[GeV]')
-
+        make_comparison_hist(df_signal,df_bkg,'invmass_bjlj',20,'Mass[GeV]')
 
         # NOTE: You can not preserve dtypes with a csv. Limitation of using csvs.
         # For training try using parquet or hdf5 if you want dtypes preserved
@@ -709,9 +810,9 @@ def main():
     usage = 'usage: %prog [options]'
     parser = argparse.ArgumentParser(usage)
     parser.add_argument('-i', '--inputs_file_path', dest='inputs_file_path', help='Path to directory containing input files', default='/eos/cms/store/group/phys_top/ExtraYukawa/2018/', type=str)
-    parser.add_argument('-o', '--outputs', dest='output_dir', help='Name of output directory', default='', type=str)
+    parser.add_argument('-o', '--outputs', dest='output_dir', help='Name of output directory', default='test', type=str)
     parser.add_argument('-f', '--format', dest='output_format', help= 'Output file format: p = .parquet.gzip, c = .csv', default='p', type=str)
-    parser.add_argument('-n', '--nev', dest='num_events', help= 'number of events to run over', default='100000', type=int)
+    parser.add_argument('-n', '--nev', dest='num_events', help= 'number of events to run over', default='10000', type=int)
     parser.add_argument('-p', '--preprocess', dest='preprocess_data', default='1', type=int)
     args = parser.parse_args()
     input_file_path_name = args.inputs_file_path
