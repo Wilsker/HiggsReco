@@ -10,6 +10,7 @@ import numpy as np
 from itertools import combinations, permutations
 import uproot
 import os
+from tqdm import tqdm
 
 np.finfo(np.dtype("float32"))
 skimstore_place = "skim_root/"
@@ -120,10 +121,10 @@ class event_truth:
         while top_mother_id == 6:
           top_mother_idx = self.mother_indices[top_mother_idx]
           top_mother_id  = abs(self.particle_ids[top_mother_idx])
-          if top_mother_id == 5000001:
-            if daughter_id == 5:
-              self.pscalar_bquark     = vector.obj(pt=daughter_pt, eta=daughter_eta, phi=daughter_phi, mass=daughter_mass)
-              self.pscalar_bquark_idx = index_
+        if top_mother_id == 5000001:
+          if daughter_id == 5:
+            self.pscalar_bquark     = vector.obj(pt=daughter_pt, eta=daughter_eta, phi=daughter_phi, mass=daughter_mass)
+            self.pscalar_bquark_idx = index_
   def dr_parton_particle(self):
     j_p4_bq = []
     j_p4_cq = []
@@ -183,7 +184,10 @@ def AddPermutation(fin_name, From, To, Tag):
   except FileNotFoundError():
     raise FileNotFoundError('Input tree &s not found! ' % (fin_name + ":" + tree_name))
 
-  run_event = To 
+  run_event = To
+  if To == -1:
+    run_event = events.num_entries
+  print('run with', run_event, 'events') 
   ###############
   ## GenParton ##
   ###############
@@ -261,9 +265,12 @@ def AddPermutation(fin_name, From, To, Tag):
   #############
   ## GenInfo ##
   #############
-  df = [] 
-  for row in range(From, To):
-    print(row)
+  df = []
+
+  progress_bar = tqdm(total=run_event - From, unit="iteration")
+ 
+  for row in range(From, run_event):
+    progress_bar.update(1)
     ev_truth = event_truth()
     ev_truth.particle_p4          = GenPart_p4[row]
     ev_truth.particle_ids         = GenPart_pdgId[row]
@@ -276,13 +283,17 @@ def AddPermutation(fin_name, From, To, Tag):
     ev_truth.genlep_p4            = GenLep_p4[row]
 
     ev_truth.set_pscalar_quarks()
+
+    label_valid = 1
+
     if ev_truth.pscalar_lquark_idx == -1 or ev_truth.pscalar_bquark_idx == -1 or ev_truth.pscalar_lep_idx == -1:
-      continue
+      label_valid = 0
     ev_truth.dr_parton_particle()
 
     recoj1_idx = -1
     recoj2_idx = -1
     recoJet_p4_dict = {}
+
     for j_idx in range(0, len(RecoJet_p4[row])):
       if not (j_idx in TightJet_id[row]):
         continue
@@ -295,7 +306,7 @@ def AddPermutation(fin_name, From, To, Tag):
         recoj2_idx       = j_idx
 
     if recoj1_idx == -1 or recoj2_idx == -1:
-      continue
+      label_valid = 0
     
     reco_leptons_p4_list = []
     for el in RecoElectron_p4[row]:
@@ -359,9 +370,10 @@ def AddPermutation(fin_name, From, To, Tag):
     subleading_lept_phi = []
     subleading_lept_mass = []
     labels = []
+    labels_pair = []
+    labels_valid = []
     Entry = []
 
-    print(combinations_list)
     for comb_ in combinations_list:
       bmatched_jet_pt.append(RecoJet_pt[row][comb_[0]])
       bmatched_jet_eta.append(RecoJet_eta[row][comb_[0]])
@@ -435,6 +447,12 @@ def AddPermutation(fin_name, From, To, Tag):
       else:
         label = 0
       labels.append(label)
+      if ((comb_[0] == recoj1_idx) and (comb_[1] == recoj2_idx)) or ((comb_[0]==recoj2_idx) and (comb_[1] == recoj1_idx)):
+        label_pair = 1
+      else:
+        label_pair = 0
+      labels_pair.append(label_pair)
+      labels_valid.append(label_valid)
       Entry.append(row)
 
      # print(in_array)
@@ -488,7 +506,9 @@ def AddPermutation(fin_name, From, To, Tag):
        'jet4_CvB': jet4_CvB,
        'jet4_CvL': jet4_CvL,
        'jet4_FlavB': jet4_FlavB,
-       'label':labels
+       'label':labels,
+       'label_pair':labels_pair,
+       'label_valid':labels_valid
     }
     df_ = pd.DataFrame(data=d_entries)
     df.append(df_)
@@ -498,7 +518,7 @@ def AddPermutation(fin_name, From, To, Tag):
   print(df)
 
   df.to_hdf(('dataframe/' + fin_name.split('/')[-1].split('.')[0] + '_' + str(Tag) + '.h5'),'df',mode='w',format='table',data_columns=True)
-
+  progress_bar.close()
   return 0
 if __name__ == "__main__":
   start = time.time()

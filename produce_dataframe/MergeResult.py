@@ -69,15 +69,17 @@ def AddEntry(fin_name):
   # Data Preprocessing
   colnames = list(df.keys())
   ct = ColumnTransformer(
-  [('StandardScaler', StandardScaler(), colnames[5:-1] )],
+  [('StandardScaler', StandardScaler(), colnames[5:-3] )],
       remainder='drop'# Drop nontransformed columns
   )
   index_ = df[colnames[:5]]
-  label_ = df[colnames[-1]]
+  label_ = df[colnames[-3]]
+  label_pair_ = df[colnames[-2]]
+  label_valid_ = df[colnames[-1]]
   result_ = ct.fit_transform(df)
-  result_ = np.c_[index_, result_, label_]
+  result_ = np.c_[index_, result_, label_, label_pair_, label_valid_]
   transformed_df = pd.DataFrame(result_,columns=colnames)
-  transformed_df = transformed_df.astype({'Entry':"int",'bmatched_jet_index':'int','lmatched_jet_index':'int','jet3_index':'int','jet4_index':'int','label':'int'})
+  transformed_df = transformed_df.astype({'Entry':"int",'bmatched_jet_index':'int','lmatched_jet_index':'int','jet3_index':'int','jet4_index':'int','label':'int', 'label_pair':'int', 'label_valid':'int'})
   print(transformed_df)
   transformed_df.to_hdf(os.path.join(output_place,fin_name + '.h5'),'df',mode='w',format='table',data_columns=True)
   input_columns_ = [
@@ -99,12 +101,23 @@ def AddEntry(fin_name):
   idx = transformed_df.groupby(['Entry'])['predicted'].transform(max) == transformed_df['predicted']
   df = transformed_df[idx]
 
+  idx_1 = transformed_df.groupby(['Entry'])['bmatched_jet_pt'].transform(max) == transformed_df['bmatched_jet_pt']
+  df1 = transformed_df[idx_1]
+  idx_2 = df1.groupby(['Entry'])['lmatched_jet_pt'].transform(max) == df1['lmatched_jet_pt']
+  df2 = df1[idx_2]
+  idx_3 = df2.groupby(['Entry'])['jet3_pt'].transform(max) == df2['jet3_pt']
+  df3 = df2[idx_3]
+  idx_4 = df3.groupby(['Entry'])['jet4_pt'].transform(max) == df3['jet4_pt']
+  df_order = df3[idx_4]
+
+
 
   df = df.sort_values(by=['Entry'])
   df = df.set_index("Entry")  
   print(df)
   print("accuracy: %.4f"%(df['label'].sum()/len(df)))
-
+  print("accuracy(pt order): %.4f"%(df_order['label'].sum()/len(df)))
+  print("ratio of well matching: %.4f"%(df['label_valid'].sum()/len(df)))
 
   return 0
 if __name__ == "__main__":
